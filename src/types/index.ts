@@ -27,6 +27,7 @@ export interface VideoProject {
   subtitles: SubtitleSegment[];
   createdAt: Date;
   errorMessage?: string;
+  tempDir?: string; // 抽帧生成的临时目录路径
 }
 
 // AI 配置

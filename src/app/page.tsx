@@ -1,7 +1,7 @@
 'use client';
 
 import React, {useCallback, useRef, useState} from 'react';
-import {FileText, Film} from 'lucide-react';
+import {FileText, Film, Trash2} from 'lucide-react';
 import {v4 as uuidv4} from 'uuid';
 import {useAppStore} from '@/lib/store';
 import type {SubtitleSegment, VideoProject} from '@/types';
@@ -20,6 +20,7 @@ export default function Home() {
         setCurrentProject,
         updateProjectStatus,
         updateSubtitles,
+        clearCurrentProject,
     } = useAppStore();
 
     const subtitleEditRef = useRef<SubtitleEditorRef>(null);
@@ -93,6 +94,42 @@ export default function Home() {
         [aiConfig.apiKey, addProject, currentProject, setCurrentProject, updateProjectStatus]
     );
 
+    // 清除视频和相关数据
+    const handleClearVideo = useCallback(async () => {
+        if (!currentProject) return;
+
+        // 释放视频 object URL
+        if (videoUrl) {
+            URL.revokeObjectURL(videoUrl);
+        }
+
+        // 清理服务端的 temp 目录
+        if (currentProject.tempDir) {
+            try {
+                await fetch('/api/cleanup-frames', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        tempDir: currentProject.tempDir,
+                    }),
+                });
+            } catch (error) {
+                console.error('清理帧文件夹失败:', error);
+            }
+        }
+
+        // 重置状态
+        setVideoUrl('');
+        setUploadProgress(0);
+        setIsUploading(false);
+        setVideoCurrentTime(0);
+        setSelectedSegment(undefined);
+        setEditText('');
+        clearCurrentProject();
+    }, [currentProject, videoUrl, clearCurrentProject]);
+
     // 开始分析
     const handleStartAnalysis = useCallback(async () => {
         if (!videoUrl || !aiConfig.apiKey || !currentProject) return;
@@ -121,7 +158,13 @@ export default function Home() {
                 throw new Error(extractData.error || '抽帧失败');
             }
 
-            const { frames, duration } = extractData.data;
+            const { frames, duration, tempDir } = extractData.data;
+
+            // 保存 tempDir 路径用于后续清理
+            setCurrentProject({
+                ...currentProject!,
+                tempDir,
+            });
 
             // 更新进度 - 抽帧完成
             updateProjectStatus('processing', 50);
@@ -322,6 +365,18 @@ export default function Home() {
                 <span className={styles.logoText}>
             Video<span className={styles.logoAccent}>2</span>SRT
           </span>
+            </div>
+            <div className={styles.userArea}>
+                {currentProject && (
+                    <button
+                        className={styles.clearButton}
+                        onClick={handleClearVideo}
+                        title="清除视频和字幕"
+                    >
+                        <Trash2 className={styles.clearButtonIcon} />
+                        清除视频
+                    </button>
+                )}
             </div>
         </header>;
     }

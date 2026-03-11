@@ -16,6 +16,7 @@ interface AppState {
   updateSubtitles: (subtitles: SubtitleSegment[]) => void;
   addProject: (project: VideoProject) => void;
   removeProject: (projectId: string) => void;
+  clearCurrentProject: () => void;
 
   // AI 配置 Actions
   setAiModel: (model: AIModel) => void;
@@ -72,6 +73,8 @@ export const useAppStore = create<AppState>()(
         projects: state.projects.filter((p) => p.id !== projectId),
         currentProject: state.currentProject?.id === projectId ? null : state.currentProject,
       })),
+
+      clearCurrentProject: () => set({ currentProject: null }),
 
       // AI 配置 Actions
       setAiModel: (model) => set((state) => ({

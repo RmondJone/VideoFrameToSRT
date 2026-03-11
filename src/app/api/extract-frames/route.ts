@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
         duration,
         frameCount: frames.length,
         frames,
+        tempDir, // 返回临时目录路径用于后续清理
       },
     });
   } catch (error) {
