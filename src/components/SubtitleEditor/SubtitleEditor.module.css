@@ -93,56 +93,6 @@
   font-style: italic;
 }
 
-.editArea {
-  padding: var(--spacing-lg);
-  border-top: 1px solid var(--bg-border);
-}
-
-.textarea {
-  width: 100%;
-  min-height: 80px;
-  padding: var(--spacing-md);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--bg-border);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: 14px;
-  line-height: 1.6;
-  resize: vertical;
-}
-
-.textarea:focus {
-  border-color: var(--color-primary);
-}
-
-.editTime {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-md);
-}
-
-.timeInput {
-  width: 80px;
-  padding: 6px 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--bg-border);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: monospace;
-  text-align: center;
-}
-
-.timeInput:focus {
-  border-color: var(--color-primary);
-}
-
-.timeLabel {
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
 .empty {
   display: flex;
   flex-direction: column;
