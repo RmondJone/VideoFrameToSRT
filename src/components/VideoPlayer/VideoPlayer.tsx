@@ -108,12 +108,7 @@ export default function VideoPlayer({
                             style={{width: `${duration > 0 ? (progress / duration) * 100 : 0}%`}}
                         />
                     </div>
-                    <span className={styles.time}>
-            {formatTime(progress)} / {formatTime(duration)}
-          </span>
-                    <button className={styles.settingsButton}>
-                        <Settings className={styles.settingsIcon}/>
-                    </button>
+                    <span className={styles.time}>{formatTime(progress)} / {formatTime(duration)}</span>
                 </div>
             </div>
         </div>

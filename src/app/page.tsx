@@ -95,58 +95,126 @@ export default function Home() {
 
     // 开始分析
     const handleStartAnalysis = useCallback(async () => {
-        if (!videoUrl || !aiConfig.apiKey) return;
+        if (!videoUrl || !aiConfig.apiKey || !currentProject) return;
 
         updateProjectStatus('processing', 0);
 
         try {
-            // 1. 抽帧
+            // 1. 将视频 URL 转换为 Blob 并上传抽帧
+            const videoResponse = await fetch(videoUrl);
+            const videoBlob = await videoResponse.blob();
+            const videoFile = new File([videoBlob], currentProject.fileName, { type: videoBlob.type });
+
+            // 2. 调用抽帧 API
+            const extractFormData = new FormData();
+            extractFormData.append('video', videoFile);
+            extractFormData.append('interval', String(aiConfig.frameInterval));
+
             const extractResponse = await fetch('/api/extract-frames', {
                 method: 'POST',
-                body: new FormData(),
+                body: extractFormData,
             });
 
-            // 注意：这里需要上传实际文件，下面是简化版本
-            // 实际实现需要将视频文件上传到服务器
+            const extractData = await extractResponse.json();
 
-            // 模拟抽帧完成
-            setTimeout(() => {
-                updateProjectStatus('processing', 100);
-                updateProjectStatus('analyzing', 0);
+            if (!extractData.success) {
+                throw new Error(extractData.error || '抽帧失败');
+            }
 
-                // 模拟分析完成
-                setTimeout(() => {
-                    // 生成示例字幕数据
-                    const subtitles: SubtitleSegment[] = [
-                        {
-                            id: uuidv4(),
-                            startTime: 0,
-                            endTime: 3,
-                            text: '欢迎使用 AI 字幕生成器',
-                        },
-                        {
-                            id: uuidv4(),
-                            startTime: 3,
-                            endTime: 6,
-                            text: '这是一个测试字幕',
-                        },
-                        {
-                            id: uuidv4(),
-                            startTime: 6,
-                            endTime: 10,
-                            text: '视频内容分析中...',
-                        },
-                    ];
+            const { frames, duration } = extractData.data;
 
-                    updateSubtitles(subtitles);
-                    updateProjectStatus('completed', 100);
-                }, 2000);
-            }, 1000);
+            // 更新进度 - 抽帧完成
+            updateProjectStatus('processing', 50);
+
+            // 3. 调用 AI 分析 API
+            updateProjectStatus('analyzing', 0);
+
+            const analyzeResponse = await fetch('/api/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    frames: frames,
+                    model: aiConfig.model,
+                    apiKey: aiConfig.apiKey,
+                    language: aiConfig.language,
+                    frameInterval: aiConfig.frameInterval,
+                }),
+            });
+
+            const analyzeData = await analyzeResponse.json();
+
+            if (!analyzeData.success) {
+                throw new Error(analyzeData.error || 'AI 分析失败');
+            }
+
+            // 4. 将分析结果转换为字幕片段
+            const { descriptions } = analyzeData.data;
+            const subtitles: SubtitleSegment[] = [];
+
+            for (let i = 0; i < descriptions.length; i++) {
+                const desc = descriptions[i];
+                const nextDesc = descriptions[i + 1];
+
+                if (desc.description && desc.description !== '[分析失败]') {
+                    subtitles.push({
+                        id: uuidv4(),
+                        startTime: desc.timestamp,
+                        endTime: nextDesc ? nextDesc.timestamp : duration,
+                        text: desc.description,
+                        frameIndex: i,
+                    });
+                }
+
+                // 更新分析进度
+                const analyzeProgress = Math.round(((i + 1) / descriptions.length) * 100);
+                updateProjectStatus('analyzing', analyzeProgress);
+            }
+
+            // 5. 合并相邻的相似字幕（可选优化）
+            const mergedSubtitles = mergeSimilarSubtitles(subtitles);
+
+            updateSubtitles(mergedSubtitles);
+            updateProjectStatus('completed', 100);
         } catch (error) {
             console.error('Analysis error:', error);
-            updateProjectStatus('error', 0, '分析失败，请重试');
+            updateProjectStatus('error', 0, error instanceof Error ? error.message : '分析失败，请重试');
         }
-    }, [videoUrl, aiConfig.apiKey, updateProjectStatus, updateSubtitles]);
+    }, [videoUrl, aiConfig, currentProject, updateProjectStatus, updateSubtitles]);
+
+    // 合并相邻相似字幕的辅助函数
+    const mergeSimilarSubtitles = (subtitles: SubtitleSegment[]): SubtitleSegment[] => {
+        if (subtitles.length === 0) return [];
+
+        const merged: SubtitleSegment[] = [];
+        let current = { ...subtitles[0] };
+
+        for (let i = 1; i < subtitles.length; i++) {
+            const next = subtitles[i];
+
+            // 如果当前字幕和下一个字幕时间连续且内容相似，则合并
+            if (next.startTime - current.endTime < 0.5 && areSimilarTexts(current.text, next.text)) {
+                current.endTime = next.endTime;
+                current.text = current.text + ' ' + next.text;
+            } else {
+                merged.push(current);
+                current = { ...next };
+            }
+        }
+        merged.push(current);
+
+        return merged;
+    };
+
+    // 判断两个文本是否相似（简单实现：去除标点后比较）
+    const areSimilarTexts = (text1: string, text2: string): boolean => {
+        const normalize = (t: string) => t.replace(/[，。！？、]/g, '').toLowerCase();
+        const n1 = normalize(text1);
+        const n2 = normalize(text2);
+        // 简单的包含检查
+        return n1.includes(n2) || n2.includes(n1) || n1.length < 5 || n2.length < 5;
+    };
 
     // 导出 SRT
     const handleExport = useCallback(async () => {

@@ -42,7 +42,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 提取帧
-    const frameCount = Math.ceil(duration / interval);
     const outputPattern = path.join(framesDir, 'frame_%04d.png');
 
     try {
@@ -62,9 +61,6 @@ export async function POST(request: NextRequest) {
       const fileBuffer = fs.readFileSync(filePath);
       frames.push(fileBuffer.toString('base64'));
     }
-
-    // 清理临时文件
-    fs.rmSync(tempDir, { recursive: true, force: true });
 
     return NextResponse.json({
       success: true,

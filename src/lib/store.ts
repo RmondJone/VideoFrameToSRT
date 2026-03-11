@@ -35,7 +35,7 @@ export const useAppStore = create<AppState>()(
         model: 'openai',
         apiKey: '',
         language: 'zh',
-        frameInterval: 1,
+        frameInterval: 10,
       },
 
       // Actions
