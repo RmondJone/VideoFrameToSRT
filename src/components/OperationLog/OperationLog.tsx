@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useLogStore, logger } from '@/lib/client-logger';
 import type { LogEntry, LogLevel } from '@/lib/logger';
 import styles from './OperationLog.module.css';
@@ -39,6 +39,7 @@ interface LogItemProps {
 }
 
 function LogItem({ entry }: LogItemProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const emoji = categoryEmojis[entry.category] || '📋';
   const color = levelColors[entry.level];
   const levelEmoji = entry.level === 'success' ? '✅' :
@@ -46,13 +47,40 @@ function LogItem({ entry }: LogItemProps) {
     entry.level === 'warning' ? '⚠️' :
     entry.level === 'debug' ? '🔍' : 'ℹ️';
 
+  const hasDetails = !!entry.details;
+  const needsExpand = hasDetails;
+
+  const handleToggle = () => {
+    if (needsExpand) {
+      setIsExpanded(!isExpanded);
+    }
+  };
+
   return (
-    <div className={styles.logItem} style={{ borderLeftColor: color }}>
+    <div
+      className={`${styles.logItem} ${isExpanded ? styles.logItemExpanded : ''}`}
+      style={{ borderLeftColor: color }}
+      onClick={handleToggle}
+      role={needsExpand ? "button" : undefined}
+      tabIndex={needsExpand ? 0 : undefined}
+      aria-expanded={needsExpand ? isExpanded : undefined}
+    >
       <span className={styles.time}>{formatLogTime(entry.timestamp)}</span>
       <span className={styles.level}>{levelEmoji}</span>
       <span className={styles.emoji}>{emoji}</span>
-      <span className={styles.message}>{entry.message}</span>
-      {entry.details && <span className={styles.details}>{entry.details}</span>}
+      <div className={styles.contentWrapper}>
+        <span className={styles.message}>{entry.message}</span>
+        {entry.details && (
+          <span className={`${styles.details} ${isExpanded ? styles.detailsExpanded : ''}`}>
+            {entry.details}
+          </span>
+        )}
+      </div>
+      {needsExpand && (
+        <span className={`${styles.expandIcon} ${isExpanded ? styles.expandIconExpanded : ''}`}>
+          ▼
+        </span>
+      )}
     </div>
   );
 }
