@@ -74,6 +74,13 @@
     height: calc(100vh - 120px);
 }
 
+.logSection {
+    flex: 1;
+    min-height: 150px;
+    max-height: 300px;
+    overflow: hidden;
+}
+
 .leftPane {
     display: flex;
     flex-direction: column;
@@ -122,10 +129,28 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
+    flex: 1;
+    min-height: 200px;
     color: var(--text-tertiary);
     text-align: center;
     padding: var(--spacing-xl);
+}
+
+.editContainer {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: var(--spacing-lg);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    overflow: hidden;
+}
+
+.editForm {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
 }
 
 .emptyIcon {
@@ -165,7 +190,8 @@
 
 .textarea {
     width: 100%;
-    min-height: 450px;
+    min-height: 200px;
+    max-height: 350px;
     padding: var(--spacing-md);
     background: var(--bg-tertiary);
     border: 1px solid var(--bg-border);
@@ -182,7 +208,7 @@
 
 .button {
     width: 200px;
-    margin-top: var(--spacing-lg);
+    margin-top: var(--spacing-md);
     padding: 10px 24px;
     background: var(--color-primary);
     color: white;

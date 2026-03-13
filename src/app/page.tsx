@@ -4,12 +4,14 @@ import React, {useCallback, useRef, useState} from 'react';
 import {FileText, Film, Trash2} from 'lucide-react';
 import {v4 as uuidv4} from 'uuid';
 import {useAppStore} from '@/lib/store';
+import {logger} from '@/lib/client-logger';
 import type {SubtitleSegment, VideoProject} from '@/types';
 import VideoUploader from '@/components/VideoUploader/VideoUploader';
 import ModelConfigForm from '@/components/ModelConfigForm/ModelConfigForm';
 import VideoPlayer from '@/components/VideoPlayer/VideoPlayer';
 import SubtitleEditor, {SubtitleEditorRef} from '@/components/SubtitleEditor/SubtitleEditor';
 import AnalysisDashboard from '@/components/AnalysisDashboard/AnalysisDashboard';
+import OperationLog from '@/components/OperationLog/OperationLog';
 import styles from './page.module.css';
 
 export default function Home() {
@@ -36,10 +38,12 @@ export default function Home() {
     const handleFileSelect = useCallback(
         async (file: File) => {
             if (!aiConfig.apiKey) {
+                logger.warning('config', 'API Key 未配置', '请先在设置中配置 API Key');
                 alert('请先配置 API Key');
                 return;
             }
 
+            logger.info('upload', '开始上传视频', `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
             setIsUploading(true);
             setUploadProgress(0);
 
@@ -89,6 +93,7 @@ export default function Home() {
                 });
 
                 setIsUploading(false);
+                logger.success('upload', '视频上传完成', `时长: ${Math.floor(video.duration)}s`);
             };
         },
         [aiConfig.apiKey, addProject, currentProject, setCurrentProject, updateProjectStatus]
@@ -97,6 +102,8 @@ export default function Home() {
     // 清除视频和相关数据
     const handleClearVideo = useCallback(async () => {
         if (!currentProject) return;
+
+        logger.info('cleanup', '开始清除视频和字幕', currentProject.fileName);
 
         // 释放视频 object URL
         if (videoUrl) {
@@ -115,8 +122,9 @@ export default function Home() {
                         tempDir: currentProject.tempDir,
                     }),
                 });
+                logger.success('cleanup', '临时文件清理完成', currentProject.tempDir);
             } catch (error) {
-                console.error('清理帧文件夹失败:', error);
+                logger.error('cleanup', '清理临时文件失败', String(error));
             }
         }
 
@@ -128,16 +136,19 @@ export default function Home() {
         setSelectedSegment(undefined);
         setEditText('');
         clearCurrentProject();
+        logger.success('cleanup', '项目已清除');
     }, [currentProject, videoUrl, clearCurrentProject]);
 
     // 开始分析
     const handleStartAnalysis = useCallback(async () => {
         if (!videoUrl || !aiConfig.apiKey || !currentProject) return;
 
+        logger.info('analyze', '开始分析视频', `模型: ${aiConfig.model}, 间隔: ${aiConfig.frameInterval}s`);
         updateProjectStatus('processing', 0);
 
         try {
             // 1. 将视频 URL 转换为 Blob 并上传抽帧
+            logger.info('extract', '开始抽帧', `间隔: ${aiConfig.frameInterval}s`);
             const videoResponse = await fetch(videoUrl);
             const videoBlob = await videoResponse.blob();
             const videoFile = new File([videoBlob], currentProject.fileName, { type: videoBlob.type });
@@ -159,6 +170,7 @@ export default function Home() {
             }
 
             const { frames, duration, tempDir } = extractData.data;
+            logger.success('extract', '抽帧完成', `提取了 ${frames.length} 帧`);
 
             // 保存 tempDir 路径用于后续清理
             setCurrentProject({
@@ -169,36 +181,61 @@ export default function Home() {
             // 更新进度 - 抽帧完成
             updateProjectStatus('processing', 50);
 
-            // 3. 调用 AI 分析 API
+            // 3. 分批调用 AI 分析 API（每批10张）
+            logger.info('analyze', '开始 AI 分析', `共 ${frames.length} 帧, 分 ${Math.ceil(frames.length / 10)} 批处理`);
             updateProjectStatus('analyzing', 0);
 
-            const analyzeResponse = await fetch('/api/analyze', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    frames: frames,
-                    model: aiConfig.model,
-                    apiKey: aiConfig.apiKey,
-                    language: aiConfig.language,
-                    frameInterval: aiConfig.frameInterval,
-                }),
-            });
+            const batchSize = 10;
+            const allDescriptions: Array<{ timestamp: number; description: string }> = [];
+            const totalBatches = Math.ceil(frames.length / batchSize);
 
-            const analyzeData = await analyzeResponse.json();
+            for (let batch = 0; batch < totalBatches; batch++) {
+                const startIdx = batch * batchSize;
+                const endIdx = Math.min(startIdx + batchSize, frames.length);
+                const batchFrames = frames.slice(startIdx, endIdx);
 
-            if (!analyzeData.success) {
-                throw new Error(analyzeData.error || 'AI 分析失败');
+                const analyzeResponse = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        frames: batchFrames,
+                        model: aiConfig.model,
+                        apiKey: aiConfig.apiKey,
+                        language: aiConfig.language,
+                        frameInterval: aiConfig.frameInterval,
+                        batchSize: 1, // 后端单帧分析
+                    }),
+                });
+
+                const analyzeData = await analyzeResponse.json();
+
+                if (!analyzeData.success) {
+                    throw new Error(analyzeData.error || 'AI 分析失败');
+                }
+
+                // 累加批次结果
+                const batchDescriptions = analyzeData.data.descriptions;
+                allDescriptions.push(...batchDescriptions);
+
+                // 更新进度
+                const progress = Math.round(((batch + 1) / totalBatches) * 100);
+                updateProjectStatus('analyzing', progress);
+
+                // 每批次记录日志
+                logger.debug('analyze', `批次 ${batch + 1}/${totalBatches} 完成`, `已处理 ${endIdx}/${frames.length} 帧`);
             }
 
+            logger.success('analyze', 'AI 分析完成', `共 ${allDescriptions.length} 个片段`);
+
             // 4. 将分析结果转换为字幕片段
-            const { descriptions } = analyzeData.data;
+            logger.info('generate', '生成字幕片段', `原始片段: ${allDescriptions.length}`);
             const subtitles: SubtitleSegment[] = [];
 
-            for (let i = 0; i < descriptions.length; i++) {
-                const desc = descriptions[i];
-                const nextDesc = descriptions[i + 1];
+            for (let i = 0; i < allDescriptions.length; i++) {
+                const desc = allDescriptions[i];
+                const nextDesc = allDescriptions[i + 1];
 
                 if (desc.description && desc.description !== '[分析失败]') {
                     subtitles.push({
@@ -209,18 +246,18 @@ export default function Home() {
                         frameIndex: i,
                     });
                 }
-
-                // 更新分析进度
-                const analyzeProgress = Math.round(((i + 1) / descriptions.length) * 100);
-                updateProjectStatus('analyzing', analyzeProgress);
             }
 
             // 5. 合并相邻的相似字幕（可选优化）
+            logger.info('merge', '合并相似字幕');
             const mergedSubtitles = mergeSimilarSubtitles(subtitles);
+            logger.success('merge', '字幕合并完成', `合并后: ${mergedSubtitles.length} 条`);
 
             updateSubtitles(mergedSubtitles);
             updateProjectStatus('completed', 100);
+            logger.success('analyze', '✅ 全部完成!', `生成 ${mergedSubtitles.length} 条字幕`);
         } catch (error) {
+            logger.error('analyze', '分析失败', error instanceof Error ? error.message : String(error));
             console.error('Analysis error:', error);
             updateProjectStatus('error', 0, error instanceof Error ? error.message : '分析失败，请重试');
         }
@@ -263,6 +300,8 @@ export default function Home() {
     const handleExport = useCallback(async () => {
         if (!currentProject?.subtitles.length) return;
 
+        logger.info('export', '开始导出 SRT 文件', `${currentProject.subtitles.length} 条字幕`);
+
         try {
             const response = await fetch('/api/generate-srt', {
                 method: 'POST',
@@ -286,8 +325,10 @@ export default function Home() {
                 a.download = data.data.fileName;
                 a.click();
                 URL.revokeObjectURL(url);
+                logger.success('export', 'SRT 文件导出成功', data.data.fileName);
             }
         } catch (error) {
+            logger.error('export', '导出失败', String(error));
             console.error('Export error:', error);
         }
     }, [currentProject, aiConfig.language]);
@@ -396,37 +437,45 @@ export default function Home() {
                             选中字幕数据之后开始编辑
                         </p>
                     </div>
+                    <div className={styles.logSection}>
+                        <OperationLog />
+                    </div>
                 </div>
             );
         }
-        return <div>
-            <div className={styles.editTime}>
-                <span className={styles.timeLabel}>时间范围：</span>
-                <input
-                    type="text"
-                    className={styles.timeInput}
-                    value={formatTime(selectedSegment.startTime)}
-                    readOnly
+        return <div className={styles.editContainer}>
+            <div className={styles.editForm}>
+                <div className={styles.editTime}>
+                    <span className={styles.timeLabel}>时间范围：</span>
+                    <input
+                        type="text"
+                        className={styles.timeInput}
+                        value={formatTime(selectedSegment.startTime)}
+                        readOnly
+                    />
+                    <span className={styles.timeLabel}>→</span>
+                    <input
+                        type="text"
+                        className={styles.timeInput}
+                        value={formatTime(selectedSegment.endTime)}
+                        readOnly
+                    />
+                </div>
+                <textarea
+                    className={styles.textarea}
+                    placeholder="输入字幕文本..."
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
                 />
-                <span className={styles.timeLabel}>→</span>
-                <input
-                    type="text"
-                    className={styles.timeInput}
-                    value={formatTime(selectedSegment.endTime)}
-                    readOnly
-                />
+                <button className={`${styles.button} ${styles.success}`} onClick={() => {
+                    subtitleEditRef.current?.handleSubtitleChange(editText)
+                }}>
+                    保存字幕
+                </button>
             </div>
-            <textarea
-                className={styles.textarea}
-                placeholder="输入字幕文本..."
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-            />
-            <button className={`${styles.button} ${styles.success}`} onClick={() => {
-                subtitleEditRef.current?.handleSubtitleChange(editText)
-            }}>
-                保存字幕
-            </button>
+            <div className={styles.logSection}>
+                <OperationLog />
+            </div>
         </div>;
     }
 
