@@ -215,6 +215,27 @@ export default function Home() {
                     throw new Error(analyzeData.error || 'AI 分析失败');
                 }
 
+                // 显示 AI 调用日志
+                if (analyzeData.data.logs && analyzeData.data.logs.length > 0) {
+                    for (const log of analyzeData.data.logs) {
+                        const status = log.responseStatus === 200 ? '✅' : '❌';
+                        const errorInfo = log.responseError ? ` - ${log.responseError}` : '';
+                        logger.info(
+                            'analyze',
+                            `${status} AI API 调用`,
+                            `${log.apiUrl} | 模型: ${log.model} | 帧: ${log.frameCount} | 耗时: ${log.duration}ms${errorInfo}`
+                        );
+                        // 显示完整请求参数
+                        if (log.requestBody) {
+                            logger.debug('analyze', `📥 请求参数 (帧${log.frameCount})`, JSON.stringify(log.requestBody, null, 2));
+                        }
+                        // 显示完整响应内容
+                        if (log.responseData) {
+                            logger.debug('analyze', `📤 响应内容 (帧${log.frameCount})`, JSON.stringify(log.responseData, null, 2));
+                        }
+                    }
+                }
+
                 // 累加批次结果
                 const batchDescriptions = analyzeData.data.descriptions;
                 allDescriptions.push(...batchDescriptions);
